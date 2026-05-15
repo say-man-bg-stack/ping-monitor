@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.ping-monitor" path="/org/gnome/shell/extensions/ping-monitor/">
+    <key name="interval-seconds" type="i">
+      <default>30</default>
+      <summary>Интервал на проверка</summary>
+      <description>През колко секунди да се изпълнява ping заявката.</description>
+    </key>
+    <key name="ping-count" type="i">
+      <default>2</default>
+      <summary>Брой пакети</summary>
+      <description>Брой ICMP пакети при всяка проба.</description>
+    </key>
+    <key name="hosts-json" type="s">
+      <default>'[{"id":"router","name":"Рутер","address":"192.168.1.1","parent":null},{"id":"dns","name":"Google DNS","address":"8.8.8.8","parent":"router"}]'</default>
+      <summary>Списък с хостове</summary>
+      <description>JSON сериализиран масив от дефинираните хостове и техните релации.</description>
+    </key>
+  </schema>
+</schemalist>

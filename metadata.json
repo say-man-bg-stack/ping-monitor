@@ -1,0 +1,11 @@
+{
+  "uuid": "ping-monitor@home.say",
+  "name": "Hierarchy Ping Monitor",
+  "description": "Мониторинг на хостове с йерархия на свързаност и тихо заглушаване на нотификациите.",
+  "shell-version": [
+    "49",
+    "50"
+  ],
+  "settings-schema": "org.gnome.shell.extensions.ping-monitor",
+  "url": ""
+}
