@@ -1,0 +1,1 @@
+#ping-monitor@home.say
