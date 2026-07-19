@@ -72,6 +72,12 @@ export default class HierarchyPingMonitorExtension extends Extension {
             }
             
             let item = new PopupMenu.PopupMenuItem(`${h.name} (${h.address}): UNKNOWN`);
+
+            // Свързване на сигнала за клик (activate) с конкретно действие
+            item.connect('activate', () => {
+                this._onHostItemClicked(h);
+            });
+
             this._indicator.menu.addMenuItem(item);
             this._menuItems[h.id] = item;
         });
@@ -106,7 +112,7 @@ export default class HierarchyPingMonitorExtension extends Extension {
         this._checkAllHosts();
     }
 
-    async _checkAllHosts() {
+    async _checkAllHosts(targetHost = null) {
         if (!this._hosts || this._hosts.length === 0) {
             this._updatePanelIcon('UNKNOWN');
             return;
@@ -114,7 +120,11 @@ export default class HierarchyPingMonitorExtension extends Extension {
 
         let pingCount = this._settings.get_int('ping-count').toString();
 
-        let promises = this._hosts.map(async (host) => {
+        // Определяне кои хостове ще се проверяват
+        let hostsToCheck = targetHost ? [targetHost] : this._hosts;
+
+        // Изпълнение на пинг заявките паралелно само за избраните хостове
+        let promises = hostsToCheck.map(async (host) => {
             let isUp = await this._pingAddress(host.address, pingCount);
             return { id: host.id, isUp };
         });
@@ -123,55 +133,83 @@ export default class HierarchyPingMonitorExtension extends Extension {
         let pingResults = {};
         results.forEach(r => pingResults[r.id] = r.isUp);
 
-        // Променливи за следене на глобалното състояние на иконата
-        let hasDownHost = false;
-        let hasUnknownHost = false;
+        // Променливи за следене на глобалното състояние на главната икона
+        let statusTracker = { hasDownHost: false, hasUnknownHost: false };
 
-        this._hosts.forEach(host => {
-            let physicalUp = pingResults[host.id];
-            let parentId = host.parent;
-            let currentRecord = this._hostsStatus[host.id] || { status: 'UNKNOWN' };
-            let oldStatus = currentRecord.status;
-            let newStatus = 'UNKNOWN';
-
-            if (!parentId) {
-                newStatus = physicalUp ? 'UP' : 'DOWN';
-            } else {
-                let parentRecord = this._hostsStatus[parentId];
-                let parentStatus = parentRecord ? parentRecord.status : 'UNKNOWN';
-
-                if (parentStatus === 'DOWN' || parentStatus === 'UNKNOWN') {
-                    newStatus = 'UNKNOWN'; 
-                } else {
-                    newStatus = physicalUp ? 'UP' : 'DOWN';
-                }
-            }
-
-            currentRecord.status = newStatus;
-            this._hostsStatus[host.id] = currentRecord;
-
-            // Броене на състоянията за иконата
-            if (newStatus === 'DOWN') hasDownHost = true;
-            if (newStatus === 'UNKNOWN') hasUnknownHost = true;
-
-            if (newStatus === 'DOWN' && oldStatus !== 'DOWN') {
-                this._notifyHostDown(host);
-            }
-
-            if (this._menuItems[host.id]) {
-                let statusEmoji = newStatus === 'UP' ? '🟢 UP' : (newStatus === 'DOWN' ? '🔴 DOWN' : '⚪ UNKNOWN');
-                this._menuItems[host.id].label.set_text(`${host.name} (${host.address}): ${statusEmoji}`);
-            }
+        // Итерация само върху списъка с хостове за проверка
+        hostsToCheck.forEach(host => {
+            this._processHostStatus(host, pingResults, statusTracker);
         });
 
-        // Определяне на финалното състояние на главната икона
-        if (hasDownHost) {
+        // Главната икона се обновява само ако сме проверили всички хостове,
+        // или ако текущо провереният единичен хост промени глобалното състояние.
+        if (!targetHost) {
+            this._updateGlobalIcon(statusTracker);
+        } else {
+            // При единичен хост преизчисляваме състоянието на иконата на база всички съществуващи статуси
+            this._recalculateGlobalIcon();
+        }
+    }
+
+    _processHostStatus(host, pingResults, statusTracker) {
+        let physicalUp = pingResults[host.id];
+        let parentId = host.parent;
+        let currentRecord = this._hostsStatus[host.id] || { status: 'UNKNOWN' };
+        let oldStatus = currentRecord.status;
+        let newStatus = 'UNKNOWN';
+
+        if (!parentId) {
+            newStatus = physicalUp ? 'UP' : 'DOWN';
+        } else {
+            let parentRecord = this._hostsStatus[parentId];
+            let parentStatus = parentRecord ? parentRecord.status : 'UNKNOWN';
+
+            if (parentStatus === 'DOWN' || parentStatus === 'UNKNOWN') {
+                newStatus = 'UNKNOWN'; 
+            } else {
+                newStatus = physicalUp ? 'UP' : 'DOWN';
+            }
+        }
+
+        currentRecord.status = newStatus;
+        this._hostsStatus[host.id] = currentRecord;
+
+        if (newStatus === 'DOWN') statusTracker.hasDownHost = true;
+        if (newStatus === 'UNKNOWN') statusTracker.hasUnknownHost = true;
+
+        if (newStatus === 'DOWN' && oldStatus !== 'DOWN') {
+            this._notifyHostDown(host);
+        }
+
+        if (this._menuItems[host.id]) {
+            let statusEmoji = newStatus === 'UP' ? '🟢 UP' : (newStatus === 'DOWN' ? '🔴 DOWN' : '⚪ UNKNOWN');
+            this._menuItems[host.id].label.set_text(`${host.name} (${host.address}): ${statusEmoji}`);
+        }
+    }
+
+    _updateGlobalIcon(statusTracker) {
+        if (statusTracker.hasDownHost) {
             this._updatePanelIcon('DOWN');
-        } else if (hasUnknownHost) {
+        } else if (statusTracker.hasUnknownHost) {
             this._updatePanelIcon('UNKNOWN');
         } else {
             this._updatePanelIcon('UP');
         }
+    }
+
+    _recalculateGlobalIcon() {
+        let hasDown = false;
+        let hasUnknown = false;
+
+        this._hosts.forEach(h => {
+            let record = this._hostsStatus[h.id] || { status: 'UNKNOWN' };
+            if (record.status === 'DOWN') hasDown = true;
+            if (record.status === 'UNKNOWN') hasUnknown = true;
+        });
+
+        if (hasDown) this._updatePanelIcon('DOWN');
+        else if (hasUnknown) this._updatePanelIcon('UNKNOWN');
+        else this._updatePanelIcon('UP');
     }
 
     _pingAddress(address, count) {
@@ -221,6 +259,12 @@ export default class HierarchyPingMonitorExtension extends Extension {
             this._icon.set_style_class_name('system-status-icon');
             this._icon.set_style(''); // Изчистване на стила (връщане към цвета на темата)
         }
+    }
+
+    _onHostItemClicked(host) {
+        log(`Кликнато върху хост: ${host.name} (${host.address})`);
+        // Добавете вашия код тук (напр. пинг, отваряне на терминал, SSH сесия)
+        this._checkAllHosts(host);
     }
 
     _notifyHostDown(host) {
